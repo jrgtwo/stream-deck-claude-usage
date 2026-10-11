@@ -1,0 +1,40 @@
+{
+	"Name": "Claude Usage",
+	"Version": "0.1.0.0",
+	"Author": "jonat",
+	"Actions": [
+		{
+			"Name": "Usage Stat",
+			"UUID": "com.jonat.claude-usage.stat",
+			"Icon": "imgs/actions/usage/icon",
+			"Tooltip": "Shows how much of your Claude usage limits you have used. Press to cycle stats.",
+			"PropertyInspectorPath": "ui/usage-stat.html",
+			"Controllers": ["Keypad"],
+			"DisableAutomaticStates": true,
+			"States": [
+				{
+					"Image": "imgs/actions/usage/key",
+					"ShowTitle": false
+				}
+			]
+		}
+	],
+	"Category": "Claude Usage",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Shows the percentage used of your Claude 5-hour and weekly limits, and how much you used today, this week and this month, all from local data.",
+	"Icon": "imgs/plugin/marketplace",
+	"SDKVersion": 3,
+	"Software": {
+		"MinimumVersion": "7.1"
+	},
+	"OS": [
+		{ "Platform": "mac", "MinimumVersion": "12" },
+		{ "Platform": "windows", "MinimumVersion": "10" }
+	],
+	"Nodejs": {
+		"Version": "24",
+		"Debug": "enabled"
+	},
+	"UUID": "com.jonat.claude-usage"
+}

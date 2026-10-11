@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>Claude Usage Settings</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+	</head>
+
+	<body>
+		<sdpi-item label="Show">
+			<sdpi-select setting="stat" default="limit-5h">
+				<option value="limit-5h">5-hour limit used</option>
+				<option value="limit-week">Weekly limit used</option>
+				<option value="used-today">Used today (% of weekly)</option>
+				<option value="used-week">Used last 7 days (% of weekly)</option>
+				<option value="used-month">Used this month (% of weekly)</option>
+				<option value="tokens-today">Tokens today</option>
+				<option value="messages-today">Messages today</option>
+				<option value="used-hour">Used last hour (% of 5-hour)</option>
+				<option value="chart-week">7-day chart (% of weekly per day)</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="About">
+			<p style="margin: 0; font-size: 9pt; color: #969696">
+				Percentages come from Claude Code's status line and update whenever a Claude Code session gets a reply. Today / 7 days / month / last hour are worked out from saved readings, so they only count usage since the plugin was set up. Press the key to cycle stats.
+			</p>
+		</sdpi-item>
+	</body>
+</html>
