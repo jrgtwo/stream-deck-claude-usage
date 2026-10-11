@@ -1,50 +1,109 @@
 # Claude Usage for Stream Deck
 
-Shows how much of your Claude subscription limits you have used, as percentages, on Stream Deck keys.
-Everything is local; nothing is sent anywhere.
+**Know exactly how much Claude you have left, at a glance, without ever typing `/usage` again.**
 
-- **Limit percentages** come from Claude Code itself. It passes `rate_limits` (5-hour and weekly
-  `used_percentage` and `resets_at`) to its status line command. `statusline/statusline.mjs` saves them to
-  `~/.claude/streamdeck-usage.json`, and appends every change to `~/.claude/streamdeck-usage-history.jsonl`.
-  The plugin reads both. Set it up in `~/.claude/settings.json`:
+Claude Usage puts your Claude Pro/Max limits on your Stream Deck as live, color-coded gauges. See how much of
+your 5-hour window and weekly limit you've used, when each one resets, and how fast you're burning through it.
+Stop getting surprised by "usage limit reached" in the middle of a flow.
 
-  ```json
-  "statusLine": { "type": "command", "command": "node \"C:/Users/jonat/projects/streamDeck/claude/statusline/statusline.mjs\"" }
-  ```
-- **Token and message counts** are read from Claude Code transcripts (`~/.claude/projects/**/*.jsonl`).
+![Claude Usage keys on a Stream Deck](docs/preview.png)
 
-Drag **Claude Usage → Usage Stat** onto a key, pick a stat in the settings panel, or press the key to cycle:
+## Why you'll love it
 
-| Stat | Shows |
+- 🎯 **Real numbers, not guesses.** The percentages come straight from Claude Code, the same figures `/usage` shows.
+  Usage from claude.ai and the desktop app counts too.
+- 🚦 **Warns you before it's a problem.** Rings glow Claude orange normally, turn amber at 75% and red at 90%.
+- ⏱️ **Countdown to reset.** Every gauge tells you exactly when your window frees up again.
+- 📊 **See your pace.** Track how much of your weekly limit you used today, this week, this month, or in the last
+  hour, plus a 7-day bar chart of your daily usage.
+- 🔒 **100% local and private.** No API keys, no logins, no network calls. It reads files Claude Code already writes
+  on your machine, and nothing ever leaves it.
+- 👆 **One key, every stat.** Press any key to cycle through stats, or drop several on your deck for a full
+  dashboard.
+
+## What you can show
+
+| Key | What it tells you |
 | --- | --- |
-| 5-hour limit used | % used in the current 5-hour window, ring gauge, time until reset |
-| Weekly limit used | % used in the 7-day window, ring gauge, time until reset |
-| Used today / last 7 days / this month | % of the weekly limit used in that period |
-| Used last hour | % of the 5-hour limit used in the last 60 minutes |
-| Tokens today | All tokens (input, output, cache), plus output tokens |
-| Messages today | API responses, plus session count |
-| 7-day chart | % of the weekly limit used per day, today highlighted |
+| **5-hour limit used** | Ring gauge of your current 5-hour window, with time until reset |
+| **Weekly limit used** | Ring gauge of your 7-day limit, with time until reset |
+| **Used today** | How much of your weekly limit you've used since midnight |
+| **Used last 7 days** | How much of your weekly limit you've used over the past week |
+| **Used this month** | Your weekly-limit usage added up for the month (yes, it can pass 100%) |
+| **Used last hour** | How much of your 5-hour limit the last 60 minutes used: your burn rate |
+| **7-day chart** | Daily usage bars, with today highlighted |
+| **Tokens today** | Total tokens Claude Code processed today, plus output tokens |
+| **Messages today** | Claude replies today, plus how many sessions |
 
 Keys refresh every 15 seconds.
 
-## Caveats
+## Get started in 5 minutes
 
-- **Period stats (today, 7 days, month, last hour) come from saved readings.** They add up each increase between
-  consecutive readings (and the new value after a reset), so they only count usage since the history started.
-  When the history doesn't cover the whole period the key says "since …".
-- **Limit percentages update only while Claude Code is running.** They are account-wide (claude.ai usage counts too),
-  but only refresh when a Claude Code session updates its status line. After an hour without an update the ring
-  turns grey and shows how old the data is. Once a window passes its reset time the key shows 0%.
+**You'll need:** a Stream Deck with Stream Deck software 7.1+, Node.js 20+, and
+[Claude Code](https://code.claude.com) signed in with a Claude Pro or Max plan.
+
+**1. Build and install the plugin**
+
+```sh
+git clone <this repo>
+cd <repo folder>
+npm install
+npm run build
+npx streamdeck dev      # turn on Stream Deck developer mode (needed for local plugins)
+npm run link            # install the plugin into Stream Deck
+```
+
+Restart the Stream Deck app, and **Claude Usage** appears in your actions list.
+
+**2. Connect Claude Code**
+
+Add this to `~/.claude/settings.json`, pointing at where you cloned the repo:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "node \"/path/to/repo/statusline/statusline.mjs\""
+}
+```
+
+As a bonus, your Claude Code status line now shows your limits too:
+`Opus 5.5 · ctx 12% · 5h 24% used · week 5% used`
+
+> Already have a custom status line? This replaces it, so copy your old `statusLine` entry somewhere first if
+> you want to merge the two.
+
+**3. Drag, drop, done**
+
+Drag **Claude Usage → Usage Stat** onto any key. Pick a stat in the settings panel, or just press the key to
+cycle through them.
+
+## How it works
+
+Claude Code hands your account's live limit data (`rate_limits`) to its status line command every time Claude
+replies. The included status line script saves those numbers to `~/.claude/streamdeck-usage.json` and keeps a
+small history in `~/.claude/streamdeck-usage-history.jsonl`. The plugin reads both, plus Claude Code's own
+session files for token and message counts.
+
+That's the whole pipeline: no servers, no scraping, no credentials.
+
+## Good to know
+
+- **Updates when Claude Code is active.** Limits refresh whenever a Claude Code session gets a reply. If the
+  data is more than an hour old, the ring turns grey and shows how old it is, so you never mistake stale numbers
+  for live ones. When a window resets, the key drops back to 0% on its own.
+- **History builds over time.** "Today", "7 days", "month" and "last hour" are worked out from saved readings,
+  so on day one they only cover usage since you installed. Until the history spans the full period the key says
+  "since …".
+- **Pro and Max plans only.** Claude Code only reports limits for claude.ai subscribers.
 
 ## Development
 
 ```sh
-npm install
-npm run build          # bundle to com.jonat.claude-usage.sdPlugin/bin/plugin.js
 npm run watch          # rebuild and restart the plugin on every change
 npm run test:stats     # print the stats the keys would show; add `-- <dir>` to dump key SVGs
 npm run validate       # check the manifest with the Elgato CLI
+npm run pack           # build a .streamDeckPlugin installer
 ```
 
-The plugin folder is linked into Stream Deck with `npm run link`. Restarting from the CLI needs
-developer mode (`npx streamdeck dev`).
+Built with the [Elgato Stream Deck SDK](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started/).
+Restarting the plugin from the CLI needs developer mode (`npx streamdeck dev`).
