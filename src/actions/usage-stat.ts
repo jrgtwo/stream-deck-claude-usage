@@ -10,6 +10,7 @@ import streamDeck, {
 
 import { RENAMED_STATS, renderMessage, renderStat, STAT_IDS, toDataUrl, type StatId } from "../render";
 import { readHistory, readLimits } from "../usage/limits";
+import { readSessions } from "../usage/sessions";
 import { snapshot } from "../usage/stats";
 import { UsageStore } from "../usage/store";
 
@@ -63,11 +64,11 @@ export class UsageStat extends SingletonAction<UsageSettings> {
 		} catch (error) {
 			streamDeck.logger.error("Failed to read Claude Code transcripts", error);
 		}
-		const [limits, history] = await Promise.all([readLimits(), readHistory()]);
+		const [limits, history, sessions] = await Promise.all([readLimits(), readHistory(), readSessions()]);
 		const snap = snapshot(this.store.list(), history);
 		for (const [id, key] of this.visible) {
 			if (onlyId && id !== onlyId) continue;
-			const svg = !this.store.hasRoots && !limits ? renderMessage("Claude", "No data", "~/.claude missing") : renderStat(key.stat, snap, limits);
+			const svg = !this.store.hasRoots && !limits ? renderMessage("Claude", "No data", "~/.claude missing") : renderStat(key.stat, snap, limits, sessions);
 			if (svg === key.image) continue;
 			key.image = svg;
 			await key.action.setImage(toDataUrl(svg));

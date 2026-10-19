@@ -1,19 +1,28 @@
 #!/usr/bin/env node
 // Claude Code status line command. Claude Code pipes session JSON to stdin, including the
 // account's `rate_limits` (5-hour and 7-day used_percentage + resets_at). This script saves
-// the latest limits to ~/.claude/streamdeck-usage.json and appends each change to
-// ~/.claude/streamdeck-usage-history.jsonl for the Stream Deck plugin, then prints a
-// one-line status: model · context · 5h used · weekly used.
+// the latest limits to ~/.claude/streamdeck-usage.json, appends each change to
+// ~/.claude/streamdeck-usage-history.jsonl, and records each session's context usage in
+// ~/.claude/streamdeck-sessions.json for the Stream Deck plugin, then prints a one-line
+// status: model · context · 5h used · weekly used.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const DIR = process.env.CLAUDE_CONFIG_DIR?.split(/[,;]/)[0] || path.join(os.homedir(), ".claude");
+// `--dir <path>` saves somewhere else, e.g. from WSL into the Windows profile the plugin reads:
+//   node /mnt/c/.../statusline.mjs --dir /mnt/c/Users/<you>/.claude
+const dirArg = process.argv.indexOf("--dir");
+const DIR =
+	(dirArg !== -1 && process.argv[dirArg + 1]) || process.env.CLAUDE_CONFIG_DIR?.split(/[,;]/)[0] || path.join(os.homedir(), ".claude");
 const LATEST = path.join(DIR, "streamdeck-usage.json");
 const HISTORY = path.join(DIR, "streamdeck-usage-history.jsonl");
 // Keep roughly the last 45 days of readings; trimmed when the file passes this size.
 const HISTORY_MAX_BYTES = 2 * 1024 * 1024;
 const HISTORY_KEEP_MS = 45 * 24 * 60 * 60 * 1000;
+const SESSIONS = path.join(DIR, "streamdeck-sessions.json");
+// Sessions not seen for a day are dropped; an unchanged session is re-saved at most this often.
+const SESSION_KEEP_MS = 24 * 60 * 60 * 1000;
+const SESSION_TOUCH_MS = 60 * 1000;
 
 let input = "";
 process.stdin.setEncoding("utf8");
@@ -33,6 +42,14 @@ process.stdin.on("end", () => {
 			save(limits);
 		} catch {
 			// Never fail the status line because of the side files.
+		}
+	}
+
+	if (data.session_id && typeof data.context_window?.used_percentage === "number") {
+		try {
+			saveSession(data);
+		} catch {
+			// Same as above.
 		}
 	}
 
@@ -81,4 +98,37 @@ function save(limits) {
 			.filter((line) => line && JSON.parse(line).t > now - HISTORY_KEEP_MS);
 		writeFileSync(HISTORY, `${keep.join("\n")}\n`);
 	}
+}
+
+function saveSession(data) {
+	mkdirSync(DIR, { recursive: true });
+	const now = Date.now();
+	let sessions = {};
+	try {
+		sessions = JSON.parse(readFileSync(SESSIONS, "utf8"));
+	} catch {}
+
+	// Key by the Claude Code process, so a /clear (new session id, same window) replaces the old
+	// entry. WSL and Windows pids can collide, hence the distro prefix.
+	const key = process.env.CLAUDE_PID ? `${process.env.WSL_DISTRO_NAME ?? process.platform}:${process.env.CLAUDE_PID}` : data.session_id;
+	const dir = data.workspace?.project_dir || data.cwd || "";
+	const session = {
+		t: now,
+		session: data.session_id,
+		project: dir.split(/[\\/]/).filter(Boolean).pop() ?? "",
+		name: data.session_name,
+		used: data.context_window.used_percentage,
+		tokens: data.context_window.total_input_tokens,
+		size: data.context_window.context_window_size,
+	};
+	const previous = sessions[key];
+	if (previous && previous.session === session.session && previous.used === session.used && previous.tokens === session.tokens && now - previous.t < SESSION_TOUCH_MS) return;
+
+	sessions[key] = session;
+	for (const [id, s] of Object.entries(sessions)) {
+		if (!(s?.t > now - SESSION_KEEP_MS)) delete sessions[id];
+	}
+	const tmp = `${SESSIONS}.${process.pid}.tmp`;
+	writeFileSync(tmp, JSON.stringify(sessions));
+	renameSync(tmp, SESSIONS);
 }

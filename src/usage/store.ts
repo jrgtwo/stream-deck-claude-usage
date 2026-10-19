@@ -3,6 +3,8 @@ import { open, readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { wslClaudeDirs } from "./wsl";
+
 /** One billed API response from a Claude Code transcript. */
 export type UsageEntry = {
 	timestamp: number;
@@ -15,6 +17,9 @@ export type UsageEntry = {
 // Only today's token and message counts are shown; keep a little more than a day.
 const RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 
+// Listing a WSL share recursively takes seconds, so remote roots are only re-listed this often.
+const REMOTE_LIST_MS = 60_000;
+
 type FileState = { size: number; offset: number };
 
 /**
@@ -25,12 +30,14 @@ export class UsageStore {
 	private readonly files = new Map<string, FileState>();
 	// Keyed by message id + request id: Claude Code writes one line per content block, each repeating the usage.
 	private readonly entries = new Map<string, UsageEntry>();
+	private readonly listings = new Map<string, { at: number; names: string[] }>();
 	private scanning: Promise<void> | undefined;
+	private lastRoots: string[] = [];
 
-	constructor(private readonly roots: string[] = defaultProjectRoots()) {}
+	constructor(private readonly roots: () => string[] | Promise<string[]> = allProjectRoots) {}
 
 	get hasRoots(): boolean {
-		return this.roots.length > 0;
+		return this.lastRoots.length > 0;
 	}
 
 	/** Scan for new transcript data. Concurrent callers share the same scan. */
@@ -46,10 +53,11 @@ export class UsageStore {
 
 	private async scan(): Promise<void> {
 		const cutoff = Date.now() - RETENTION_MS;
-		for (const root of this.roots) {
+		this.lastRoots = await this.roots();
+		for (const root of this.lastRoots) {
 			let names: string[];
 			try {
-				names = await readdir(root, { recursive: true });
+				names = await this.listFiles(root);
 			} catch {
 				continue;
 			}
@@ -68,6 +76,15 @@ export class UsageStore {
 		for (const [key, entry] of this.entries) {
 			if (entry.timestamp < cutoff) this.entries.delete(key);
 		}
+	}
+
+	private async listFiles(root: string): Promise<string[]> {
+		if (!root.startsWith("\\\\")) return readdir(root, { recursive: true });
+		const listing = this.listings.get(root);
+		if (listing && Date.now() - listing.at < REMOTE_LIST_MS) return listing.names;
+		const names = await readdir(root, { recursive: true });
+		this.listings.set(root, { at: Date.now(), names });
+		return names;
 	}
 
 	private async readFile(file: string, size: number): Promise<void> {
@@ -134,4 +151,10 @@ export function defaultProjectRoots(): string[] {
 	const configured = process.env.CLAUDE_CONFIG_DIR?.split(/[,;]/).map((dir) => dir.trim()).filter(Boolean) ?? [];
 	const dirs = configured.length > 0 ? configured : [path.join(os.homedir(), ".claude"), path.join(os.homedir(), ".config", "claude")];
 	return [...new Set(dirs.map((dir) => path.join(dir, "projects")))].filter((dir) => existsSync(dir));
+}
+
+/** Local transcript locations plus those of any running WSL distros. */
+export async function allProjectRoots(): Promise<string[]> {
+	const wsl = (await wslClaudeDirs()).map((dir) => path.join(dir, "projects")).filter((dir) => existsSync(dir));
+	return [...defaultProjectRoots(), ...wsl];
 }

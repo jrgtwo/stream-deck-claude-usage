@@ -1,4 +1,5 @@
 import type { Limits, LimitWindow } from "./usage/limits";
+import type { SessionContext } from "./usage/sessions";
 import type { PeriodUsage, Snapshot } from "./usage/stats";
 
 export const STATS = {
@@ -11,6 +12,7 @@ export const STATS = {
 	"messages-today": "Messages today",
 	"used-hour": "Used last hour",
 	"chart-week": "7-day chart",
+	context: "Session context",
 } as const;
 
 /** Stat ids saved by earlier versions, mapped to what replaced them. */
@@ -67,8 +69,28 @@ function escape(text: string): string {
 	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function text(x: number, y: number, size: number, fill: string, content: string, weight = 400, spacing = 0): string {
-	return `<text x="${x}" y="${y}" font-family="${FONT}" font-size="${size}" font-weight="${weight}" letter-spacing="${spacing}" fill="${fill}" text-anchor="middle">${escape(content)}</text>`;
+function text(x: number, y: number, size: number, fill: string, content: string, weight = 400, spacing = 0, anchor = "middle"): string {
+	return `<text x="${x}" y="${y}" font-family="${FONT}" font-size="${size}" font-weight="${weight}" letter-spacing="${spacing}" fill="${fill}" text-anchor="${anchor}">${escape(content)}</text>`;
+}
+
+function truncate(value: string, max: number): string {
+	return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+function usedColor(used: number): string {
+	return used >= DANGER_USED ? COLORS.danger : used >= WARN_USED ? COLORS.warn : COLORS.accent;
+}
+
+/** Ring gauge filled to `used` percent, centred in the key. */
+function ring(used: number, color: string): string {
+	const r = 40;
+	const circumference = 2 * Math.PI * r;
+	const arc = (circumference * used) / 100;
+	return (
+		`<circle cx="72" cy="74" r="${r}" fill="none" stroke="${COLORS.track}" stroke-width="9"/>` +
+		`<circle cx="72" cy="74" r="${r}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round" ` +
+		`stroke-dasharray="${arc.toFixed(2)} ${circumference.toFixed(2)}" transform="rotate(-90 72 74)"/>`
+	);
 }
 
 function valueSize(value: string): number {
@@ -91,20 +113,12 @@ function limitRing(label: string, window: LimitWindow | undefined, limits: Limit
 	const reset = !window || now >= window.resetsAt;
 	const used = reset ? 0 : Math.min(100, Math.max(0, window.usedPercent));
 	const stale = !reset && now - limits.updatedAt > STALE_MS;
-	const color = stale ? COLORS.stale : used >= DANGER_USED ? COLORS.danger : used >= WARN_USED ? COLORS.warn : COLORS.accent;
-
-	const r = 40;
-	const circumference = 2 * Math.PI * r;
-	const arc = (circumference * used) / 100;
-	const ring =
-		`<circle cx="72" cy="74" r="${r}" fill="none" stroke="${COLORS.track}" stroke-width="9"/>` +
-		`<circle cx="72" cy="74" r="${r}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round" ` +
-		`stroke-dasharray="${arc.toFixed(2)} ${circumference.toFixed(2)}" transform="rotate(-90 72 74)"/>`;
+	const color = stale ? COLORS.stale : usedColor(used);
 	const value = `${Math.round(used)}%`;
 	const detail = reset ? "reset" : stale ? `${formatDuration(now - limits.updatedAt)} ago` : `resets ${formatDuration(window.resetsAt - now)}`;
 	return svg(
 		text(72, 22, 15, COLORS.label, label.toUpperCase(), 600, 1.5) +
-			ring +
+			ring(used, color) +
 			text(72, 84, value.length > 3 ? 26 : 30, stale ? COLORS.label : COLORS.value, value, 700) +
 			text(72, 136, 15, stale ? COLORS.label : color, detail, 500),
 	);
@@ -137,6 +151,42 @@ function chart(dailyUsed: number[]): string {
 	return svg(text(72, 30, 17, COLORS.label, "7 DAYS", 600, 1.5) + text(72, 50, 18, COLORS.value, formatPercent(total), 700) + bars.join(""));
 }
 
+const MAX_SESSION_ROWS = 4;
+
+/**
+ * Context window usage of active sessions: one session as a ring, several as labelled bars,
+ * fullest first.
+ */
+function sessionContext(sessions: SessionContext[]): string {
+	if (sessions.length === 0) return tile("Context", "—", "no sessions");
+	if (sessions.length === 1) {
+		const [s] = sessions;
+		const used = Math.min(100, Math.max(0, s.usedPercent));
+		const value = `${Math.round(used)}%`;
+		const detail = s.tokens !== undefined && s.windowSize ? `${formatTokens(s.tokens)} / ${formatTokens(s.windowSize)}` : "context";
+		return svg(
+			text(72, 22, 15, COLORS.label, truncate(s.project, 12).toUpperCase(), 600, 1.5) +
+				ring(used, usedColor(used)) +
+				text(72, 84, value.length > 3 ? 26 : 30, COLORS.value, value, 700) +
+				text(72, 136, 15, usedColor(used), detail, 500),
+		);
+	}
+
+	const extra = sessions.length - MAX_SESSION_ROWS;
+	const rows = sessions.slice(0, MAX_SESSION_ROWS).map((s, i) => {
+		const used = Math.min(100, Math.max(0, s.usedPercent));
+		const y = 46 + i * 26 + (MAX_SESSION_ROWS - Math.min(sessions.length, MAX_SESSION_ROWS)) * 13;
+		const color = usedColor(used);
+		return (
+			text(12, y, 15, COLORS.value, truncate(s.project, 10), 500, 0, "start") +
+			text(132, y, 15, color, `${Math.round(used)}%`, 700, 0, "end") +
+			`<rect x="12" y="${y + 5}" width="120" height="5" rx="2.5" fill="${COLORS.track}"/>` +
+			`<rect x="12" y="${y + 5}" width="${Math.max(2, (120 * used) / 100).toFixed(1)}" height="5" rx="2.5" fill="${color}"/>`
+		);
+	});
+	return svg(text(72, 22, 15, COLORS.label, extra > 0 ? `CONTEXT +${extra}` : "CONTEXT", 600, 1.5) + rows.join(""));
+}
+
 function svg(body: string): string {
 	return `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}"><rect width="${SIZE}" height="${SIZE}" fill="${COLORS.background}"/>${body}</svg>`;
 }
@@ -145,7 +195,7 @@ export function renderMessage(label: string, value: string, detail = ""): string
 	return tile(label, value, detail);
 }
 
-export function renderStat(stat: StatId, s: Snapshot, limits: Limits | undefined): string {
+export function renderStat(stat: StatId, s: Snapshot, limits: Limits | undefined, sessions: SessionContext[] = []): string {
 	switch (stat) {
 		case "limit-5h":
 			return limitRing("5h used", limits?.fiveHour, limits, s.now);
@@ -165,6 +215,8 @@ export function renderStat(stat: StatId, s: Snapshot, limits: Limits | undefined
 			return periodTile("Last hour", s.usedLastHour, "of 5h limit", s);
 		case "chart-week":
 			return s.hasHistory ? chart(s.dailyUsed) : tile("7 days", "—", "open Claude Code");
+		case "context":
+			return sessionContext(sessions);
 	}
 }
 

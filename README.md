@@ -34,6 +34,7 @@ Stop getting surprised by "usage limit reached" in the middle of a flow.
 | **7-day chart** | Daily usage bars, with today highlighted |
 | **Tokens today** | Total tokens Claude Code processed today, plus output tokens |
 | **Messages today** | Claude replies today, plus how many sessions |
+| **Session context** | How full each active session's context window is, fullest first (a ring when only one is open) |
 
 Keys refresh every 15 seconds.
 
@@ -72,6 +73,19 @@ As a bonus, your Claude Code status line now shows your limits too:
 > Already have a custom status line? This replaces it, so copy your old `statusLine` entry somewhere first if
 > you want to merge the two.
 
+**Using Claude Code in WSL too?** WSL has its own `~/.claude`, so add the status line there as well, and point
+`--dir` at your Windows `.claude` folder so both share one history:
+
+```json
+"statusLine": {
+  "type": "command",
+  "command": "node /mnt/c/path/to/repo/statusline/statusline.mjs --dir /mnt/c/Users/<you>/.claude"
+}
+```
+
+The plugin also reads token and message counts from the transcripts of any running WSL distro. It never starts
+a stopped distro; counts it has already read stay on the keys until the plugin restarts.
+
 **3. Drag, drop, done**
 
 Drag **Claude Usage → Usage Stat** onto any key. Pick a stat in the settings panel, or just press the key to
@@ -81,7 +95,8 @@ cycle through them.
 
 Claude Code hands your account's live limit data (`rate_limits`) to its status line command every time Claude
 replies. The included status line script saves those numbers to `~/.claude/streamdeck-usage.json` and keeps a
-small history in `~/.claude/streamdeck-usage-history.jsonl`. The plugin reads both, plus Claude Code's own
+small history in `~/.claude/streamdeck-usage-history.jsonl`. It also records each session's context usage in
+`~/.claude/streamdeck-sessions.json`. The plugin reads both, plus Claude Code's own
 session files for token and message counts.
 
 That's the whole pipeline: no servers, no scraping, no credentials.
@@ -94,6 +109,8 @@ That's the whole pipeline: no servers, no scraping, no credentials.
 - **History builds over time.** "Today", "7 days", "month" and "last hour" are worked out from saved readings,
   so on day one they only cover usage since you installed. Until the history spans the full period the key says
   "since …".
+- **Session context shows sessions with a reply in the last hour.** A session's number updates when it gets a
+  reply, and a closed session drops off the key an hour after its last one.
 - **Pro and Max plans only.** Claude Code only reports limits for claude.ai subscribers.
 
 ## Development
